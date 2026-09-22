@@ -82,7 +82,17 @@ mapfile -t urls < <(
     # next line so a URL that crosses a wrap boundary is reconstructed whole.
     # Shorter lines ended naturally and keep their newline as a separator.
     width=$(awk '{ gsub(/\r/,""); if (length > max) max = length } END { print max+0 }' "$dump")
-    awk -v w="$width" '{ gsub(/\r/,""); printf "%s%s", $0, (length($0)==w && w>0 ? "" : "\n") }' "$dump" \
+    awk -v w="$width" '
+        { gsub(/\r/, "") }
+        NR > 1 {
+            # Join if prev filled the width, but not when the next line starts
+            # with "word: " or "word:\n" — that is a label, not a URL continuation.
+            join = (length(prev) == w && w > 0 && $0 !~ /^[A-Za-z]+:([ \t]|$)/)
+            printf "%s%s", prev, (join ? "" : "\n")
+        }
+        { prev = $0 }
+        END { if (NR > 0) printf "%s\n", prev }
+    ' "$dump" \
         | grep -aoE '((https?|ftp|file)://|www\.)[A-Za-z0-9._~:/?#@!$&'"'"'()*+,;=%-]+' \
         | sed -E 's/[].,;:!?")>'"'"']+$//' \
         | awk '!seen[$0]++' \
